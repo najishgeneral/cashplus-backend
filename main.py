@@ -13,6 +13,7 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy import create_engine, String, DateTime, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker, Session
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import create_engine, String, DateTime, func, Integer
 
 # --------------------
 # Config
@@ -55,6 +56,15 @@ class Account(Base):
     balance_cents: Mapped[int] = mapped_column(default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+class Transaction(Base):
+    __tablename__ = "transactions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(index=True)
+    type: Mapped[str] = mapped_column(String(20))  # "FUND"
+    amount_cents: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 Base.metadata.create_all(bind=engine)
 
@@ -76,6 +86,8 @@ class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
 
+class FundIn(BaseModel):
+    amount_cents: int
 
 # --------------------
 # Helpers / deps
@@ -176,6 +188,37 @@ def login(body: LoginIn, db: Session = Depends(get_db)):
 @app.get("/me")
 def me(user: User = Depends(get_current_user)):
     return {"id": user.id, "email": user.email, "created_at": user.created_at}
+
+@app.post("/fund")
+def fund(
+    body: FundIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if body.amount_cents <= 0:
+        raise HTTPException(status_code=400, detail="amount_cents must be > 0")
+
+    account = db.query(Account).filter(Account.user_id == user.id).first()
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    account.balance_cents += body.amount_cents
+
+    db.add(
+        Transaction(
+            user_id=user.id,
+            type="FUND",
+            amount_cents=body.amount_cents,
+        )
+    )
+
+    db.commit()
+
+    return {
+        "status": "funded",
+        "balance_cents": account.balance_cents,
+    }
+
 
 @app.get("/balance")
 def get_balance(
