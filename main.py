@@ -51,6 +51,13 @@ class User(Base):
 
 Base.metadata.create_all(bind=engine)
 
+class Account(Base):
+    __tablename__ = "accounts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(unique=True, index=True)
+    balance_cents: Mapped[int] = mapped_column(default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
 
 # --------------------
 # Schemas
@@ -136,7 +143,11 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
     if len(body.password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
 
-    user = User(email=email, password_hash=pwd_context.hash(body.password))
+    user = User(
+        email=email,
+        password_hash=pwd_context.hash(body.password),
+    )
+
     db.add(user)
     try:
         db.commit()
@@ -144,7 +155,17 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=409, detail="Email already registered")
 
+    db.refresh(user)
+
+     account = Account(
+        user_id=user.id,
+        balance_cents=0
+    )
+    db.add(account)
+    db.commit()
+
     return {"status": "registered"}
+
 
 
 @app.post("/auth/login", response_model=TokenOut)
