@@ -59,12 +59,22 @@ class Account(Base):
 class Transaction(Base):
     __tablename__ = "transactions"
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(index=True)
-    type: Mapped[str] = mapped_column(String(20))  # "FUND"
+
+    # who initiated / owns this view of the transaction
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+
+    # "FUND" or "TRANSFER"
+    type: Mapped[str] = mapped_column(String(20))
+
+    # signed amount from THIS user's perspective:
+    # +5000 for funding, -145 for sending, +145 for receiving
     amount_cents: Mapped[int] = mapped_column(Integer)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+
+    # optional counterparty info
+    counterparty_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
 
 Base.metadata.create_all(bind=engine)
 
@@ -208,15 +218,18 @@ def fund(
 
     account.balance_cents += body.amount_cents
 
-    db.add(
-        Transaction(
-            user_id=user.id,
-            type="FUND",
-            amount_cents=body.amount_cents,
-        )
+db.add(
+    Transaction(
+        user_id=user.id,
+        type="FUND",
+        amount_cents=body.amount_cents,
+        direction="IN",          # optional but recommended
+        counterparty="BANK",     # optional but recommended
     )
+)
 
-    db.commit()
+db.commit()
+
 
     return {
         "status": "funded",
@@ -283,3 +296,22 @@ def get_balance(
         "balance_cents": account.balance_cents
     }
 
+@app.get("/transactions")
+def transactions(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    rows = (
+        db.query(Transaction)
+        .filter(Transaction.user_id == user.id)
+        .order_by(Transaction.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    return [
+        {
+            "id": r.id,
+            "type": r.type,
+            "amount_cents": r.amount_cents,
+            "counterparty_email": r.counterparty_email,
+            "created_at": r.created_at,
+        }
+        for r in rows
+    ]
