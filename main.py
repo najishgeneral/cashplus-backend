@@ -158,7 +158,7 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
 
     db.refresh(user)
 
-     account = Account(
+    account = Account(
         user_id=user.id,
         balance_cents=0
     )
