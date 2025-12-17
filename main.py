@@ -89,6 +89,10 @@ class TokenOut(BaseModel):
 class FundIn(BaseModel):
     amount_cents: int
 
+class TransferIn(BaseModel):
+    to_email: EmailStr
+    amount_cents: int
+
 # --------------------
 # Helpers / deps
 # --------------------
@@ -217,6 +221,51 @@ def fund(
     return {
         "status": "funded",
         "balance_cents": account.balance_cents,
+    }
+
+@app.post("/transfer")
+def transfer(
+    body: TransferIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if body.amount_cents <= 0:
+        raise HTTPException(status_code=400, detail="amount_cents must be > 0")
+
+    to_email = body.to_email.lower().strip()
+    if to_email == user.email:
+        raise HTTPException(status_code=400, detail="Cannot transfer to yourself")
+
+    from_acct = db.query(Account).filter(Account.user_id == user.id).first()
+    if not from_acct:
+        raise HTTPException(status_code=404, detail="Sender account not found")
+
+    to_user = db.query(User).filter(User.email == to_email).first()
+    if not to_user:
+        raise HTTPException(status_code=404, detail="Recipient not found")
+
+    to_acct = db.query(Account).filter(Account.user_id == to_user.id).first()
+    if not to_acct:
+        raise HTTPException(status_code=404, detail="Recipient account not found")
+
+    if from_acct.balance_cents < body.amount_cents:
+        raise HTTPException(status_code=400, detail="Insufficient funds")
+
+    # move money
+    from_acct.balance_cents -= body.amount_cents
+    to_acct.balance_cents += body.amount_cents
+
+    # ledger entries
+    db.add(Transaction(user_id=user.id, type="XFER_OUT", amount_cents=body.amount_cents))
+    db.add(Transaction(user_id=to_user.id, type="XFER_IN", amount_cents=body.amount_cents))
+
+    db.commit()
+
+    return {
+        "status": "transferred",
+        "from_balance_cents": from_acct.balance_cents,
+        "to_email": to_email,
+        "amount_cents": body.amount_cents,
     }
 
 
