@@ -145,24 +145,16 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
     if len(body.password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
 
-    user = User(
-        email=email,
-        password_hash=pwd_context.hash(body.password),
-    )
-
+    user = User(email=email, password_hash=pwd_context.hash(body.password))
     db.add(user)
     try:
         db.commit()
+        db.refresh(user)  # <-- IMPORTANT so user.id is available
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="Email already registered")
 
-    db.refresh(user)
-
-    account = Account(
-        user_id=user.id,
-        balance_cents=0
-    )
+    account = Account(user_id=user.id, balance_cents=0)
     db.add(account)
     db.commit()
 
