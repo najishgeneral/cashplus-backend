@@ -209,27 +209,28 @@ def fund(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if body.amount_cents <= 0:
-        raise HTTPException(status_code=400, detail="amount_cents must be > 0")
-
     account = db.query(Account).filter(Account.user_id == user.id).first()
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
 
+    if body.amount_cents <= 0:
+        raise HTTPException(status_code=400, detail="amount_cents must be > 0")
+
+    # Update balance
     account.balance_cents += body.amount_cents
 
-db.add(
-    Transaction(
-        user_id=user.id,
-        type="FUND",
-        amount_cents=body.amount_cents,
-        direction="IN",          # optional but recommended
-        counterparty="BANK",     # optional but recommended
+    # Log transaction (must be INSIDE the function)
+    db.add(
+        Transaction(
+            user_id=user.id,
+            type="FUND",
+            amount_cents=body.amount_cents,
+            direction="IN",
+            counterparty="BANK",
+        )
     )
-)
 
-db.commit()
-
+    db.commit()
 
     return {
         "status": "funded",
