@@ -207,7 +207,10 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
 
     return {"status": "registered"}
 
-
+@app.get("/fbo_total")
+def fbo_total(db: Session = Depends(get_db)):
+    total = db.query(func.coalesce(func.sum(Account.balance_cents), 0)).scalar()
+    return {"fbo_total_cents": int(total or 0)}
 
 @app.post("/auth/login", response_model=TokenOut)
 def login(body: LoginIn, db: Session = Depends(get_db)):
