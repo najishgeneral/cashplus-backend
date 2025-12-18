@@ -71,8 +71,9 @@ class Transaction(Base):
     amount_cents: Mapped[int] = mapped_column(Integer)
 
     # optional counterparty info
+    counterparty: Mapped[str | None] = mapped_column(String(64), nullable=True)
     counterparty_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
-
+    direction: Mapped[str] = mapped_column(String(8), default="IN")  # NE
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
