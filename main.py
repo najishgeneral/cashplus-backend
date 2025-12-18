@@ -219,17 +219,16 @@ def fund(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    account = db.query(Account).filter(Account.user_id == user.id).first()
-    if not account:
-        raise HTTPException(status_code=404, detail="Account not found")
-
     if body.amount_cents <= 0:
         raise HTTPException(status_code=400, detail="amount_cents must be > 0")
+
+    # ✅ Always ensure the account exists (no 404 for older users)
+    account = get_or_create_account(db, user.id)
 
     # Update balance
     account.balance_cents += body.amount_cents
 
-    # Log transaction (must be INSIDE the function)
+    # Log transaction
     db.add(
         Transaction(
             user_id=user.id,
@@ -260,17 +259,14 @@ def transfer(
     if to_email == user.email:
         raise HTTPException(status_code=400, detail="Cannot transfer to yourself")
 
-    from_acct = db.query(Account).filter(Account.user_id == user.id).first()
-    if not from_acct:
-        raise HTTPException(status_code=404, detail="Sender account not found")
-
+    # recipient must exist as a User (email)
     to_user = db.query(User).filter(User.email == to_email).first()
     if not to_user:
         raise HTTPException(status_code=404, detail="Recipient not found")
 
-    to_acct = db.query(Account).filter(Account.user_id == to_user.id).first()
-    if not to_acct:
-        raise HTTPException(status_code=404, detail="Recipient account not found")
+    # ✅ always ensure both accounts exist
+    from_acct = get_or_create_account(db, user.id)
+    to_acct = get_or_create_account(db, to_user.id)
 
     if from_acct.balance_cents < body.amount_cents:
         raise HTTPException(status_code=400, detail="Insufficient funds")
@@ -279,7 +275,7 @@ def transfer(
     from_acct.balance_cents -= body.amount_cents
     to_acct.balance_cents += body.amount_cents
 
-    # ledger entries
+    # ledger entries (keep your existing types)
     db.add(Transaction(user_id=user.id, type="XFER_OUT", amount_cents=body.amount_cents))
     db.add(Transaction(user_id=to_user.id, type="XFER_IN", amount_cents=body.amount_cents))
 
