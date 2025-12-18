@@ -145,9 +145,19 @@ def get_or_create_account(db: Session, user_id: int) -> Account:
 
     acct = Account(user_id=user_id, balance_cents=0)
     db.add(acct)
-    db.commit()
-    db.refresh(acct)
-    return acct
+
+    try:
+        # flush writes pending INSERTs so the row exists for the rest of this request,
+        # without ending the transaction.
+        db.flush()
+        return acct
+    except IntegrityError:
+        # Another request created it at the same time
+        db.rollback()
+        acct = db.query(Account).filter(Account.user_id == user_id).first()
+        if acct:
+            return acct
+        raise
 
 
 # --------------------
@@ -222,13 +232,10 @@ def fund(
     if body.amount_cents <= 0:
         raise HTTPException(status_code=400, detail="amount_cents must be > 0")
 
-    # ✅ Always ensure the account exists (no 404 for older users)
     account = get_or_create_account(db, user.id)
 
-    # Update balance
     account.balance_cents += body.amount_cents
 
-    # Log transaction
     db.add(
         Transaction(
             user_id=user.id,
@@ -236,15 +243,13 @@ def fund(
             amount_cents=body.amount_cents,
             direction="IN",
             counterparty="BANK",
+            # if you also have counterparty_email column, you can set it to None or omit
         )
     )
 
     db.commit()
 
-    return {
-        "status": "funded",
-        "balance_cents": account.balance_cents,
-    }
+    return {"status": "funded", "balance_cents": account.balance_cents}
 
 @app.post("/transfer")
 def transfer(
@@ -259,25 +264,39 @@ def transfer(
     if to_email == user.email:
         raise HTTPException(status_code=400, detail="Cannot transfer to yourself")
 
-    # recipient must exist as a User (email)
     to_user = db.query(User).filter(User.email == to_email).first()
     if not to_user:
         raise HTTPException(status_code=404, detail="Recipient not found")
 
-    # ✅ always ensure both accounts exist
     from_acct = get_or_create_account(db, user.id)
     to_acct = get_or_create_account(db, to_user.id)
 
     if from_acct.balance_cents < body.amount_cents:
         raise HTTPException(status_code=400, detail="Insufficient funds")
 
-    # move money
     from_acct.balance_cents -= body.amount_cents
     to_acct.balance_cents += body.amount_cents
 
-    # ledger entries (keep your existing types)
-    db.add(Transaction(user_id=user.id, type="XFER_OUT", amount_cents=body.amount_cents))
-    db.add(Transaction(user_id=to_user.id, type="XFER_IN", amount_cents=body.amount_cents))
+    db.add(
+        Transaction(
+            user_id=user.id,
+            type="XFER_OUT",
+            amount_cents=body.amount_cents,
+            direction="OUT",
+            counterparty="USER",
+            counterparty_email=to_email,   # only if the column exists in DB
+        )
+    )
+    db.add(
+        Transaction(
+            user_id=to_user.id,
+            type="XFER_IN",
+            amount_cents=body.amount_cents,
+            direction="IN",
+            counterparty="USER",
+            counterparty_email=user.email, # only if the column exists in DB
+        )
+    )
 
     db.commit()
 
