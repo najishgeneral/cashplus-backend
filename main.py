@@ -138,6 +138,16 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="User not found")
     return user
 
+def get_or_create_account(db: Session, user_id: int) -> Account:
+    acct = db.query(Account).filter(Account.user_id == user_id).first()
+    if acct:
+        return acct
+
+    acct = Account(user_id=user_id, balance_cents=0)
+    db.add(acct)
+    db.commit()
+    db.refresh(acct)
+    return acct
 
 
 # --------------------
@@ -288,14 +298,9 @@ def get_balance(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    account = db.query(Account).filter(Account.user_id == user.id).first()
+    account = get_or_create_account(db, user.id)
+    return {"balance_cents": account.balance_cents}
 
-    if not account:
-        raise HTTPException(status_code=404, detail="Account not found")
-
-    return {
-        "balance_cents": account.balance_cents
-    }
 
 @app.get("/transactions")
 def transactions(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
