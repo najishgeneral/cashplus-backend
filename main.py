@@ -535,8 +535,8 @@ def exchange_public_token(
         raise HTTPException(status_code=500, detail=f"Plaid exchange error: {e}")
 
 @app.post("/withdraw")
-def withdraw(req: WithdrawRequest, db: Session = Depends(get_db), user=Depends(require_user)):
-    # 1) Verify bank account belongs to the user
+def withdraw(req: WithdrawRequest, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    # 1) Verify bank account belongs to the user . changed required_user to get_current_user above
     bank = db.query(LinkedBankAccount).filter(
         LinkedBankAccount.id == req.bank_account_id,
         LinkedBankAccount.user_id == user.id
@@ -584,7 +584,7 @@ def withdraw(req: WithdrawRequest, db: Session = Depends(get_db), user=Depends(r
     }
 
 @app.get("/bank/accounts")
-def list_bank_accounts(db: Session = Depends(get_db), user=Depends(require_user)):
+def list_bank_accounts(db: Session = Depends(get_db), user=Depends(get_current_user)): #Changed required_user to get_current_user
     rows = db.query(LinkedBankAccount).filter(LinkedBankAccount.user_id == user.id).all()
 
     return [
