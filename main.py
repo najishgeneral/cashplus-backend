@@ -15,6 +15,21 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker,
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import create_engine, String, DateTime, func, Integer
 
+from sqlalchemy import Column, String, Text, ForeignKey, DateTime, UniqueConstraint
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.sql import func
+import uuid
+
+from plaid.api import plaid_api
+from plaid.configuration import Configuration
+from plaid.api_client import ApiClient
+from plaid.model.link_token_create_request import LinkTokenCreateRequest
+from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
+from plaid.model.products import Products
+from plaid.model.country_code import CountryCode
+from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
+from plaid.model.accounts_get_request import AccountsGetRequest
+
 # --------------------
 # Config
 # --------------------
@@ -75,6 +90,42 @@ class Transaction(Base):
     counterparty_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     direction: Mapped[str] = mapped_column(String(8), default="IN")  # NE
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+# models (can live in main.py for now)
+
+from sqlalchemy import Column, String, Text, ForeignKey, DateTime, UniqueConstraint
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.sql import func
+import uuid
+
+class PlaidItem(Base):
+    __tablename__ = "plaid_items"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+
+    item_id = Column(String, unique=True, nullable=False)
+    access_token = Column(Text, nullable=False)  # TODO: encrypt in prod
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+class LinkedBankAccount(Base):
+    __tablename__ = "linked_bank_accounts"
+    __table_args__ = (
+        UniqueConstraint("user_id", "plaid_account_id", name="uq_user_plaid_account"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    plaid_item_id = Column(UUID(as_uuid=True), ForeignKey("plaid_items.id", ondelete="CASCADE"), nullable=False)
+
+    plaid_account_id = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    mask = Column(String, nullable=True)
+    subtype = Column(String, nullable=True)  # checking/savings, etc.
+    status = Column(String, nullable=False, default="active")
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 Base.metadata.create_all(bind=engine)
@@ -159,6 +210,26 @@ def get_or_create_account(db: Session, user_id: int) -> Account:
         if acct:
             return acct
         raise
+
+def make_plaid_client():
+    env = os.getenv("PLAID_ENV", "sandbox")
+    host = {
+        "sandbox": "https://sandbox.plaid.com",
+        "development": "https://development.plaid.com",
+        "production": "https://production.plaid.com",
+    }[env]
+
+    configuration = Configuration(
+        host=host,
+        api_key={
+            "clientId": os.getenv("PLAID_CLIENT_ID"),
+            "secret": os.getenv("PLAID_SECRET"),
+        }
+    )
+    api_client = ApiClient(configuration)
+    return plaid_api.PlaidApi(api_client)
+
+plaid_client = make_plaid_client()
 
 
 # --------------------
@@ -340,3 +411,94 @@ def transactions(user: User = Depends(get_current_user), db: Session = Depends(g
         }
         for r in rows
     ]
+
+from fastapi import Depends, HTTPException
+from pydantic import BaseModel
+
+class ExchangePublicTokenIn(BaseModel):
+    public_token: str
+
+@app.post("/bank/link_token")
+def create_link_token(
+    db: Session = Depends(get_db),
+    user=Depends(require_user),  # whatever you use to get current user
+):
+    try:
+        req = LinkTokenCreateRequest(
+            user=LinkTokenCreateRequestUser(client_user_id=str(user.id)),
+            client_name="CashPlus",
+            products=[Products("auth")],   # "auth" is common for bank acct verification
+            country_codes=[CountryCode("US")],
+            language="en",
+        )
+        resp = plaid_client.link_token_create(req)
+        return {"link_token": resp["link_token"]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Plaid link_token error: {e}")
+
+@app.post("/bank/exchange_public_token")
+def exchange_public_token(
+    body: ExchangePublicTokenIn,
+    db: Session = Depends(get_db),
+    user=Depends(require_user),
+):
+    try:
+        exchange_req = ItemPublicTokenExchangeRequest(public_token=body.public_token)
+        exchange_resp = plaid_client.item_public_token_exchange(exchange_req)
+        access_token = exchange_resp["access_token"]
+        item_id = exchange_resp["item_id"]
+
+        # Upsert PlaidItem for user + item_id
+        item = db.query(PlaidItem).filter(PlaidItem.item_id == item_id).one_or_none()
+        if not item:
+            item = PlaidItem(user_id=user.id, item_id=item_id, access_token=access_token)
+            db.add(item)
+            db.flush()  # get item.id
+        else:
+            item.access_token = access_token
+            item.user_id = user.id
+
+        # Fetch accounts
+        acct_req = AccountsGetRequest(access_token=access_token)
+        acct_resp = plaid_client.accounts_get(acct_req)
+        accounts = acct_resp["accounts"]
+
+        saved = []
+        for a in accounts:
+            plaid_account_id = a["account_id"]
+            name = a.get("name") or "Bank account"
+            mask = a.get("mask")
+            subtype = a.get("subtype")
+
+            existing = (
+                db.query(LinkedBankAccount)
+                .filter(
+                    LinkedBankAccount.user_id == user.id,
+                    LinkedBankAccount.plaid_account_id == plaid_account_id,
+                )
+                .one_or_none()
+            )
+            if not existing:
+                existing = LinkedBankAccount(
+                    user_id=user.id,
+                    plaid_item_id=item.id,
+                    plaid_account_id=plaid_account_id,
+                    name=name,
+                    mask=mask,
+                    subtype=subtype,
+                    status="active",
+                )
+                db.add(existing)
+
+            saved.append({
+                "id": str(existing.id),
+                "name": name,
+                "mask": mask,
+                "subtype": subtype,
+            })
+
+        db.commit()
+        return {"linked_accounts": saved}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Plaid exchange error: {e}")
