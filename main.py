@@ -20,6 +20,8 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 import uuid
 
+from sqlalchemy import Integer
+
 from plaid.api import plaid_api
 from plaid.configuration import Configuration
 from plaid.api_client import ApiClient
@@ -29,6 +31,7 @@ from plaid.model.products import Products
 from plaid.model.country_code import CountryCode
 from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
 from plaid.model.accounts_get_request import AccountsGetRequest
+
 
 # --------------------
 # Config
@@ -93,21 +96,22 @@ class Transaction(Base):
 
 # models (can live in main.py for now)
 
-from sqlalchemy import Column, String, Text, ForeignKey, DateTime, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.sql import func
-import uuid
-
 class PlaidItem(Base):
     __tablename__ = "plaid_items"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
 
-    item_id = Column(String, unique=True, nullable=False)
-    access_token = Column(Text, nullable=False)  # TODO: encrypt in prod
+    item_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    access_token: Mapped[str] = mapped_column(Text, nullable=False)  # TODO: encrypt later
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+from sqlalchemy import String, Integer, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.sql import func
+from datetime import datetime
 
 class LinkedBankAccount(Base):
     __tablename__ = "linked_bank_accounts"
@@ -115,17 +119,22 @@ class LinkedBankAccount(Base):
         UniqueConstraint("user_id", "plaid_account_id", name="uq_user_plaid_account"),
     )
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    plaid_item_id = Column(UUID(as_uuid=True), ForeignKey("plaid_items.id", ondelete="CASCADE"), nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    plaid_item_id: Mapped[int] = mapped_column(ForeignKey("plaid_items.id", ondelete="CASCADE"), nullable=False)
 
-    plaid_account_id = Column(String, nullable=False)
-    name = Column(String, nullable=False)
-    mask = Column(String, nullable=True)
-    subtype = Column(String, nullable=True)  # checking/savings, etc.
-    status = Column(String, nullable=False, default="active")
+    plaid_account_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    mask: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    subtype: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+    DateTime(timezone=True),
+    server_default=func.now(),
+    nullable=False
+)
+
 
 
 Base.metadata.create_all(bind=engine)
