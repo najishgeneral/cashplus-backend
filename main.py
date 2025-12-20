@@ -141,7 +141,7 @@ class LinkedBankAccount(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(Integer, index=True)
 
-    plaid_item_id: Mapped[int] = mapped_column(Integer)
+    plaid_item_id: Mapped[int] = mapped_column(Integer, nullable=True)
 
     institution: Mapped[str | None] = mapped_column(String(120), nullable=True)
     name: Mapped[str | None] = mapped_column(String(120), nullable=True)
@@ -618,6 +618,7 @@ def list_linked_banks(db: Session = Depends(get_db), user=Depends(get_current_us
 def add_demo_bank(db: Session = Depends(get_db), user=Depends(get_current_user)):
     bank = LinkedBankAccount(
         user_id=user.id,
+	plaid_item_id=None,
         name="Demo Checking",
         mask="1234",
         institution="Demo Bank",
