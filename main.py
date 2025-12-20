@@ -430,7 +430,7 @@ class ExchangePublicTokenIn(BaseModel):
 @app.post("/bank/link_token")
 def create_link_token(
     db: Session = Depends(get_db),
-    user=Depends(require_user),  # whatever you use to get current user
+    user=Depends(get_require_user),  # whatever you use to get current user. Changed required_user to get_current_user
 ):
     try:
         req = LinkTokenCreateRequest(
@@ -449,7 +449,7 @@ def create_link_token(
 def exchange_public_token(
     body: ExchangePublicTokenIn,
     db: Session = Depends(get_db),
-    user=Depends(require_user),
+    user=Depends(get_require_user), #changed required_user to get_current_user
 ):
     try:
         exchange_req = ItemPublicTokenExchangeRequest(public_token=body.public_token)
