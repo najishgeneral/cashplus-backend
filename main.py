@@ -18,6 +18,8 @@ from sqlalchemy import create_engine, String, DateTime, func, Integer
 from sqlalchemy import Column, String, Text, ForeignKey, DateTime, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
+#from sqlalchemy import ForeignKey
+from sqlalchemy.orm import relationship
 import uuid
 
 from sqlalchemy import Integer
@@ -31,6 +33,10 @@ from plaid.model.products import Products
 from plaid.model.country_code import CountryCode
 from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
 from plaid.model.accounts_get_request import AccountsGetRequest
+
+from fastapi import Depends, HTTPException
+from pydantic import BaseModel
+from pydantic import conint
 
 
 # --------------------
@@ -57,6 +63,10 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # --------------------
 class Base(DeclarativeBase):
     pass
+
+class WithdrawRequest(BaseModel):
+    amount_cents: conint(gt=0)
+    bank_account_id: int
 
 
 class User(Base):
@@ -87,6 +97,18 @@ class Transaction(Base):
     # signed amount from THIS user's perspective:
     # +5000 for funding, -145 for sending, +145 for receiving
     amount_cents: Mapped[int] = mapped_column(Integer)
+
+    #from sqlalchemy import ForeignKey
+    #from sqlalchemy.orm import relationship
+
+    bank_account_id: Mapped[int | None] = mapped_column(
+        ForeignKey("linked_bank_accounts.id"),
+        nullable=True,
+        index=True,
+    )
+    
+    bank_account = relationship("LinkedBankAccount")
+
 
     # optional counterparty info
     counterparty: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -421,8 +443,8 @@ def transactions(user: User = Depends(get_current_user), db: Session = Depends(g
         for r in rows
     ]
 
-from fastapi import Depends, HTTPException
-from pydantic import BaseModel
+#from fastapi import Depends, HTTPException
+#from pydantic import BaseModel
 
 class ExchangePublicTokenIn(BaseModel):
     public_token: str
@@ -511,3 +533,67 @@ def exchange_public_token(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Plaid exchange error: {e}")
+
+@app.post("/withdraw")
+def withdraw(req: WithdrawRequest, db: Session = Depends(get_db), user=Depends(require_user)):
+    # 1) Verify bank account belongs to the user
+    bank = db.query(LinkedBankAccount).filter(
+        LinkedBankAccount.id == req.bank_account_id,
+        LinkedBankAccount.user_id == user.id
+    ).first()
+
+    if not bank:
+        raise HTTPException(status_code=404, detail="Bank account not found")
+
+    # 2) Check balance
+    acct = db.query(Account).filter(Account.user_id == user.id).first()
+    if not acct:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    if acct.balance_cents < req.amount_cents:
+        raise HTTPException(status_code=400, detail="Insufficient funds")
+
+    # 3) Deduct balance
+    acct.balance_cents -= req.amount_cents
+
+    # 4) Record transaction
+    tx = Transaction(
+        user_id=user.id,
+        type="WITHDRAW",
+        amount_cents=-req.amount_cents,      # negative from user perspective
+        direction="OUT",
+        bank_account_id=bank.id,
+        counterparty=bank.name if hasattr(bank, "name") else "BANK",
+        counterparty_email=None,
+    )
+
+    db.add(tx)
+    db.commit()
+    db.refresh(tx)
+    db.refresh(acct)
+
+    return {
+        "ok": True,
+        "balance_cents": acct.balance_cents,
+        "withdrawal": {
+            "transaction_id": tx.id,
+            "bank_account_id": bank.id,
+            "amount_cents": req.amount_cents,
+            "status": "PENDING"  # for now simulated
+        }
+    }
+
+@app.get("/bank/accounts")
+def list_bank_accounts(db: Session = Depends(get_db), user=Depends(require_user)):
+    rows = db.query(LinkedBankAccount).filter(LinkedBankAccount.user_id == user.id).all()
+
+    return [
+        {
+            "id": r.id,
+            "name": getattr(r, "name", None),
+            "mask": getattr(r, "mask", None),
+            "subtype": getattr(r, "subtype", None),
+            "status": getattr(r, "status", "active"),
+        }
+        for r in rows
+    ]
