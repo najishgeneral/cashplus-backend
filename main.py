@@ -599,7 +599,7 @@ def list_bank_accounts(db: Session = Depends(get_db), user=Depends(get_current_u
     ]
 
 @app.get("/linked-bank-accounts")
-def list_linked_banks(db: Session = Depends(get_db), user=Depends(require_user)):
+def list_linked_banks(db: Session = Depends(get_db), user=Depends(get_current_user)):
     banks = (
         db.query(LinkedBankAccount)
         .filter(LinkedBankAccount.user_id == user.id)
@@ -618,7 +618,7 @@ def list_linked_banks(db: Session = Depends(get_db), user=Depends(require_user))
     ]
 
 @app.post("/linked-bank-accounts/demo")
-def add_demo_bank(db: Session = Depends(get_db), user=Depends(require_user)):
+def add_demo_bank(db: Session = Depends(get_db), user=Depends(get_current_user)):
     bank = LinkedBankAccount(
         user_id=user.id,
         name="Demo Checking",
