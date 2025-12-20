@@ -597,3 +597,40 @@ def list_bank_accounts(db: Session = Depends(get_db), user=Depends(get_current_u
         }
         for r in rows
     ]
+
+@app.get("/linked-bank-accounts")
+def list_linked_banks(db: Session = Depends(get_db), user=Depends(require_user)):
+    banks = (
+        db.query(LinkedBankAccount)
+        .filter(LinkedBankAccount.user_id == user.id)
+        .order_by(LinkedBankAccount.id.desc())
+        .all()
+    )
+    return [
+        {
+            "id": b.id,
+            "name": getattr(b, "name", None),
+            "mask": getattr(b, "mask", None),
+            "institution": getattr(b, "institution", None),
+            "created_at": b.created_at,
+        }
+        for b in banks
+    ]
+
+@app.post("/linked-bank-accounts/demo")
+def add_demo_bank(db: Session = Depends(get_db), user=Depends(require_user)):
+    bank = LinkedBankAccount(
+        user_id=user.id,
+        name="Demo Checking",
+        mask="1234",
+        institution="Demo Bank",
+    )
+    db.add(bank)
+    db.commit()
+    db.refresh(bank)
+    return {
+        "id": bank.id,
+        "name": bank.name,
+        "mask": bank.mask,
+        "institution": bank.institution,
+    }
