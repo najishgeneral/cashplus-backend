@@ -137,25 +137,22 @@ from datetime import datetime
 
 class LinkedBankAccount(Base):
     __tablename__ = "linked_bank_accounts"
-    __table_args__ = (
-        UniqueConstraint("user_id", "plaid_account_id", name="uq_user_plaid_account"),
-    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    plaid_item_id: Mapped[int] = mapped_column(ForeignKey("plaid_items.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
 
-    plaid_account_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    mask: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    subtype: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    plaid_item_id: Mapped[int] = mapped_column(Integer)
+
+    institution: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    mask: Mapped[str | None] = mapped_column(String(8), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
-    DateTime(timezone=True),
-    server_default=func.now(),
-    nullable=False
+	DateTime(timezone=True), 
+	server_default=func.now()
+	#nullable=false
 )
+
 
 
 
