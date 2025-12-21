@@ -675,19 +675,16 @@ def add_manual_bank(req: ManualBankRequest, db: Session = Depends(get_db), user=
     manual_plaid_item_id = 0  # safe dummy for NOT NULL
     manual_plaid_account_id = f"manual_{uuid.uuid4().hex}"  # safe dummy for NOT NULL
 
-    bank = LinkedBankAccount(
-        user_id=user.id,
-        institution=req.bank_name.strip(),  #added .strip()
-        name=req.account_name.strip(),
-        mask=mask,
+bank = LinkedBankAccount(
+    user_id=user.id,
+    institution=req.bank_name,
+    name=req.account_name,
+    mask=mask,
+    plaid_item_id=None,                     # real fix
+    plaid_account_id=f"manual_{uuid.uuid4().hex}",
+    status="ACTIVE",
+)
 
-        # these two avoid NOT NULL errors if your DB requires them
-        plaid_item_id=manual_plaid_item_id,
-        plaid_account_id=manual_plaid_account_id,
-
-        # if you have status in your DB model, set it too:
-        status="ACTIVE",
-    )
 
     db.add(bank)
     db.commit()
