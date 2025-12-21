@@ -142,6 +142,7 @@ class LinkedBankAccount(Base):
     user_id: Mapped[int] = mapped_column(Integer, index=True)
 
     plaid_item_id: Mapped[int] = mapped_column(Integer, nullable=True)
+    plaid_account_id: Mapped[str | None] = mapped_column(String, nullable=True)
 
     institution: Mapped[str | None] = mapped_column(String(120), nullable=True)
     name: Mapped[str | None] = mapped_column(String(120), nullable=True)
