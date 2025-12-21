@@ -677,8 +677,8 @@ def add_manual_bank(req: ManualBankRequest, db: Session = Depends(get_db), user=
 
     bank = LinkedBankAccount(
         user_id=user.id,
-        institution=req.bank_name,
-        name=req.account_name,
+        institution=req.bank_name.strip(),  #added .strip()
+        name=req.account_name.strip(),
         mask=mask,
 
         # these two avoid NOT NULL errors if your DB requires them
