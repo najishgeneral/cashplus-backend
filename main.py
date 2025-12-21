@@ -139,24 +139,30 @@ class LinkedBankAccount(Base):
     __tablename__ = "linked_bank_accounts"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(Integer, index=True)
 
-    plaid_item_id: Mapped[int] = mapped_column(Integer, nullable=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+
+    plaid_item_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     plaid_account_id: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    institution: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    name: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    mask: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+
+    mask: Mapped[str | None] = mapped_column(String, nullable=True)
+    subtype: Mapped[str | None] = mapped_column(String, nullable=True)
+    institution: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    status: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+        default="ACTIVE",
+        server_default="ACTIVE",
+    )
+
     created_at: Mapped[datetime] = mapped_column(
-	DateTime(timezone=True), 
-	server_default=func.now(),
-	#nullable=false,
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")
-
-)
-
-
-
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
 
 Base.metadata.create_all(bind=engine)
 
