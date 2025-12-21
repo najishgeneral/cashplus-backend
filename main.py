@@ -149,8 +149,8 @@ class LinkedBankAccount(Base):
     mask: Mapped[str | None] = mapped_column(String(8), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
 	DateTime(timezone=True), 
-	server_default=func.now()
-	#nullable=false
+	server_default=func.now(),
+	#nullable=false,
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")
 
 )
