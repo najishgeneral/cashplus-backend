@@ -147,11 +147,12 @@ class LinkedBankAccount(Base):
     institution: Mapped[str | None] = mapped_column(String(120), nullable=True)
     name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     mask: Mapped[str | None] = mapped_column(String(8), nullable=True)
-
     created_at: Mapped[datetime] = mapped_column(
 	DateTime(timezone=True), 
 	server_default=func.now()
 	#nullable=false
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")
+
 )
 
 
@@ -623,6 +624,7 @@ def add_demo_bank(db: Session = Depends(get_db), user=Depends(get_current_user))
         name="Demo Checking",
         mask="1234",
         institution="Demo Bank",
+	status="ACTIVE",
     )
     db.add(bank)
     db.commit()
