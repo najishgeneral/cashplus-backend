@@ -656,7 +656,7 @@ def add_demo_bank(db: Session = Depends(get_db), user=Depends(get_current_user))
     }
 
 @app.post("/linked-bank-accounts/manual")
-def add_manual_bank(req: ManualBankRequest, db: Session = Depends(get_db), user=Depends(require_user)):
+def add_manual_bank(req: ManualBankRequest, db: Session = Depends(get_db), user=Depends(get_current_user)):  #replaced require_user
     routing = _digits_only(req.routing_number)
     acct = _digits_only(req.account_number)
 
