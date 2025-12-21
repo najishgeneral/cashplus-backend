@@ -35,7 +35,7 @@ from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchan
 from plaid.model.accounts_get_request import AccountsGetRequest
 
 from fastapi import Depends, HTTPException
-from pydantic import BaseModel
+#from pydantic import BaseModel
 from pydantic import conint
 
 
@@ -63,6 +63,19 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # --------------------
 class Base(DeclarativeBase):
     pass
+
+from pydantic import BaseModel, Field
+import re, uuid
+
+class ManualBankRequest(BaseModel):
+    bank_name: str = Field(..., min_length=2, max_length=80)
+    account_name: str = Field(..., min_length=2, max_length=80)  # e.g. "Checking"
+    routing_number: str = Field(..., min_length=9, max_length=9)
+    account_number: str = Field(..., min_length=4, max_length=32)
+
+def _digits_only(s: str) -> str:
+    return re.sub(r"\D+", "", s or "")
+
 
 class WithdrawRequest(BaseModel):
     amount_cents: conint(gt=0)
@@ -641,3 +654,51 @@ def add_demo_bank(db: Session = Depends(get_db), user=Depends(get_current_user))
         "mask": bank.mask,
         "institution": bank.institution,
     }
+
+@app.post("/linked-bank-accounts/manual")
+def add_manual_bank(req: ManualBankRequest, db: Session = Depends(get_db), user=Depends(require_user)):
+    routing = _digits_only(req.routing_number)
+    acct = _digits_only(req.account_number)
+
+    if len(routing) != 9:
+        raise HTTPException(status_code=400, detail="Routing number must be 9 digits")
+    if len(acct) < 4:
+        raise HTTPException(status_code=400, detail="Account number must be at least 4 digits")
+
+    mask = acct[-4:]
+
+    # IMPORTANT:
+    # We do NOT store full account numbers in Postgres.
+    # For demo/manual banks we store only last4 + a name.
+    # For real bank linking later, Plaid will provide tokens/ids.
+
+    manual_plaid_item_id = 0  # safe dummy for NOT NULL
+    manual_plaid_account_id = f"manual_{uuid.uuid4().hex}"  # safe dummy for NOT NULL
+
+    bank = LinkedBankAccount(
+        user_id=user.id,
+        institution=req.bank_name,
+        name=req.account_name,
+        mask=mask,
+
+        # these two avoid NOT NULL errors if your DB requires them
+        plaid_item_id=manual_plaid_item_id,
+        plaid_account_id=manual_plaid_account_id,
+
+        # if you have status in your DB model, set it too:
+        status="ACTIVE",
+    )
+
+    db.add(bank)
+    db.commit()
+    db.refresh(bank)
+
+    return {
+        "id": bank.id,
+        "name": getattr(bank, "name", None),
+        "mask": getattr(bank, "mask", None),
+        "institution": getattr(bank, "institution", None),
+        "created_at": bank.created_at,
+        "status": getattr(bank, "status", "ACTIVE"),
+    }
+
