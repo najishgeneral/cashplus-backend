@@ -675,15 +675,15 @@ def add_manual_bank(req: ManualBankRequest, db: Session = Depends(get_db), user=
     manual_plaid_item_id = 0  # safe dummy for NOT NULL
     manual_plaid_account_id = f"manual_{uuid.uuid4().hex}"  # safe dummy for NOT NULL
 
-bank = LinkedBankAccount(
-    user_id=user.id,
-    institution=req.bank_name,
-    name=req.account_name,
-    mask=mask,
-    plaid_item_id=None,                     # real fix
-    plaid_account_id=f"manual_{uuid.uuid4().hex}",
-    status="ACTIVE",
-)
+    bank = LinkedBankAccount(
+        user_id=user.id,
+        institution=req.bank_name,
+        name=req.account_name,
+        mask=mask,
+        plaid_item_id=None,                     # real fix
+        plaid_account_id=f"manual_{uuid.uuid4().hex}",
+        status="ACTIVE",
+    )
 
 
     db.add(bank)
