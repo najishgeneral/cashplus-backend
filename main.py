@@ -620,7 +620,10 @@ def list_bank_accounts(db: Session = Depends(get_db), user=Depends(get_current_u
 def list_linked_banks(db: Session = Depends(get_db), user=Depends(get_current_user)):
     banks = (
         db.query(LinkedBankAccount)
-        .filter(LinkedBankAccount.user_id == user.id)
+        .filter(
+            LinkedBankAccount.user_id == user.id,
+            LinkedBankAccount.status == "ACTIVE",    
+        )
         .order_by(LinkedBankAccount.id.desc())
         .all()
     )
@@ -698,4 +701,26 @@ def add_manual_bank(req: ManualBankRequest, db: Session = Depends(get_db), user=
         "created_at": bank.created_at,
         "status": getattr(bank, "status", "ACTIVE"),
     }
+
+@app.delete("/linked-bank-accounts/{bank_id}")
+def delete_bank(bank_id: int, db: Session = Depends(get_db), user=Depends(require_user)):
+    bank = (
+        db.query(LinkedBankAccount)
+        .filter(
+            LinkedBankAccount.id == bank_id,
+            LinkedBankAccount.user_id == user.id,
+        )
+        .first()
+    )
+
+    if not bank:
+        raise HTTPException(status_code=404, detail="Bank account not found")
+
+    # Soft delete: preserve history
+    bank.status = "DELETED"
+    db.add(bank)
+    db.commit()
+
+    return {"ok": True}
+
 
