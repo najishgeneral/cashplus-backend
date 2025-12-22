@@ -703,7 +703,7 @@ def add_manual_bank(req: ManualBankRequest, db: Session = Depends(get_db), user=
     }
 
 @app.delete("/linked-bank-accounts/{bank_id}")
-def delete_bank(bank_id: int, db: Session = Depends(get_db), user=Depends(require_user)):
+def delete_bank(bank_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
     bank = (
         db.query(LinkedBankAccount)
         .filter(
