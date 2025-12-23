@@ -289,29 +289,26 @@ def make_plaid_client():
 plaid_client = make_plaid_client()
 
 
-def send_email(to_email: str, subject: str, body: str) -> None:
-    host = os.getenv("SMTP_HOST")
-    port = int(os.getenv("SMTP_PORT", "587"))
-    username = os.getenv("SMTP_USERNAME")
-    password = os.getenv("SMTP_PASSWORD")
-    email_from = os.getenv("EMAIL_FROM") or username  # fallback
+def send_email(to_email: str, subject: str, text_body: str):
+    api_key = os.getenv("RESEND_API_KEY")
+    email_from = os.getenv("EMAIL_FROM")
 
-    if not (host and port and username and password and email_from):
-        # Fail loudly in logs so you can see missing env vars
-        raise RuntimeError("Missing SMTP env vars (SMTP_HOST/PORT/USERNAME/PASSWORD/EMAIL_FROM)")
+    if not api_key:
+        print("RESEND_API_KEY is missing")
+        return
+    if not email_from:
+        print("EMAIL_FROM is missing")
+        return
 
-    msg = EmailMessage()
-    msg["From"] = email_from
-    msg["To"] = to_email
-    msg["Subject"] = subject
-    msg.set_content(body)
+    resend.api_key = api_key
 
-    # Gmail SMTP (STARTTLS)
-    with smtplib.SMTP(host, port) as server:
-        server.ehlo()
-        server.starttls()
-        server.login(username, password)
-        server.send_message(msg)
+    # simplest: text-only email
+    resend.Emails.send({
+        "from": email_from,
+        "to": [to_email],
+        "subject": subject,
+        "text": text_body,
+    })
 
 
 # --------------------
@@ -449,11 +446,14 @@ class TransferRequest(BaseModel):
 from fastapi import BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
+import resend
 
 @app.post("/debug/send-test-email")
 def debug_send_test_email(background_tasks: BackgroundTasks, user: User = Depends(get_current_user)):
     background_tasks.add_task(send_email, user.email, "CashPlus test", "This is a test email.")
     return {"ok": True}
+
+from datetime import datetime, timezone
 
 @app.post("/transfer")
 def transfer(
@@ -504,16 +504,17 @@ def transfer(
     db.refresh(from_acct)
     db.refresh(to_acct)
 
+    # ✅ Add these lines (email) right here
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     amount_str = f"${body.amount_cents / 100:.2f}"
 
-    # schedule emails AFTER commit
     background_tasks.add_task(
         send_email,
         user.email,
         "CashPlus transfer sent",
         f"You have sent {amount_str} to {to_user.email} on {now_str}."
     )
+
     background_tasks.add_task(
         send_email,
         to_user.email,
@@ -528,6 +529,7 @@ def transfer(
         "sender_balance_cents": from_acct.balance_cents,
         "receiver_balance_cents": to_acct.balance_cents,
     }
+
 
 
 
