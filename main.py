@@ -465,6 +465,27 @@ def transfer(
     db.refresh(from_acct)
     db.refresh(to_acct)
 
+    from datetime import datetime
+
+    now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+
+    # email to sender
+    background_tasks.add_task(
+        send_email,
+        user.email,
+        "CashPlus transfer sent",
+        f"You have sent ${body.amount_cents / 100:.2f} to {to_user.email} on {now_str}."
+    )
+
+    # email to receiver
+    background_tasks.add_task(
+        send_email,
+        to_user.email,
+        "CashPlus transfer received",
+        f"You have received ${body.amount_cents / 100:.2f} from {user.email} on {now_str}."
+    )
+
+
     return {
         "ok": True,
         "to_email": to_user.email,
