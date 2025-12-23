@@ -289,26 +289,41 @@ def make_plaid_client():
 plaid_client = make_plaid_client()
 
 
+import os
+import resend
+
 def send_email(to_email: str, subject: str, text_body: str):
-    api_key = os.getenv("RESEND_API_KEY")
-    email_from = os.getenv("EMAIL_FROM")
+    try:
+        api_key = os.getenv("RESEND_API_KEY")
+        email_from = os.getenv("EMAIL_FROM")
 
-    if not api_key:
-        print("RESEND_API_KEY is missing")
-        return
-    if not email_from:
-        print("EMAIL_FROM is missing")
-        return
+        if not api_key:
+            print("[EMAIL] RESEND_API_KEY is missing")
+            return
+        if not email_from:
+            print("[EMAIL] EMAIL_FROM is missing")
+            return
 
-    resend.api_key = api_key
+        # 👇 DEV OVERRIDE (Resend testing mode)
+        dev_to = os.getenv("NOTIFY_DEV_TO")
+        if dev_to:
+            to_email = dev_to
 
-    # simplest: text-only email
-    resend.Emails.send({
-        "from": email_from,
-        "to": [to_email],
-        "subject": subject,
-        "text": text_body,
-    })
+        resend.api_key = api_key
+
+        resend.Emails.send({
+            "from": email_from,
+            "to": [to_email],   # 👈 keep list format
+            "subject": subject,
+            "text": text_body,
+        })
+
+        print(f"[EMAIL] Sent to {to_email}")
+
+    except Exception as e:
+        # Never break transfers because email failed
+        print(f"[EMAIL] FAILED to={to_email} err={e}")
+
 
 
 # --------------------
