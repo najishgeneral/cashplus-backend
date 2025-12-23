@@ -450,6 +450,11 @@ from fastapi import BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 
+@app.post("/debug/send-test-email")
+def debug_send_test_email(background_tasks: BackgroundTasks, user: User = Depends(get_current_user)):
+    background_tasks.add_task(send_email, user.email, "CashPlus test", "This is a test email.")
+    return {"ok": True}
+
 @app.post("/transfer")
 def transfer(
     body: TransferIn,
