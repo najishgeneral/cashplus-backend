@@ -413,11 +413,13 @@ class TransferRequest(BaseModel):
     amount_cents: int = Field(..., gt=0)
 
 
+from fastapi import BackgroundTasks, Depends, HTTPException
+from sqlalchemy.orm import Session
+
 @app.post("/transfer")
 def transfer(
-    req: TransferRequest,
-    background_tasks: BackgroundTasks,
     body: TransferIn,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -441,28 +443,28 @@ def transfer(
     from_acct.balance_cents -= body.amount_cents
     to_acct.balance_cents += body.amount_cents
 
-    db.add(
-        Transaction(
-            user_id=user.id,
-            type="XFER_OUT",
-            amount_cents=body.amount_cents,
-            direction="OUT",
-            counterparty="USER",
-            counterparty_email=to_email,   # only if the column exists in DB
-        )
-    )
-    db.add(
-        Transaction(
-            user_id=to_user.id,
-            type="XFER_IN",
-            amount_cents=body.amount_cents,
-            direction="IN",
-            counterparty="USER",
-            counterparty_email=user.email, # only if the column exists in DB
-        )
-    )
+    db.add(Transaction(
+        user_id=user.id,
+        type="XFER_OUT",
+        amount_cents=body.amount_cents,   # ✅ keep your convention
+        direction="OUT",
+        counterparty="USER",
+        counterparty_email=to_email,
+    ))
+
+    db.add(Transaction(
+        user_id=to_user.id,
+        type="XFER_IN",
+        amount_cents=body.amount_cents,
+        direction="IN",
+        counterparty="USER",
+        counterparty_email=user.email,
+    ))
 
     db.commit()
+
+    return {"ok": True}
+
 
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     amount = f"${req.amount_cents/100:.2f}"
