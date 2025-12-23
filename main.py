@@ -38,6 +38,12 @@ from fastapi import Depends, HTTPException
 #from pydantic import BaseModel
 from pydantic import conint
 
+import smtplib
+from email.message import EmailMessage
+from datetime import datetime, timezone
+from fastapi import BackgroundTasks
+
+
 
 # --------------------
 # Config
@@ -281,6 +287,31 @@ def make_plaid_client():
 plaid_client = make_plaid_client()
 
 
+def send_email(to_email: str, subject: str, body: str) -> None:
+    host = os.getenv("SMTP_HOST")
+    port = int(os.getenv("SMTP_PORT", "587"))
+    username = os.getenv("SMTP_USERNAME")
+    password = os.getenv("SMTP_PASSWORD")
+    email_from = os.getenv("EMAIL_FROM") or username  # fallback
+
+    if not (host and port and username and password and email_from):
+        # Fail loudly in logs so you can see missing env vars
+        raise RuntimeError("Missing SMTP env vars (SMTP_HOST/PORT/USERNAME/PASSWORD/EMAIL_FROM)")
+
+    msg = EmailMessage()
+    msg["From"] = email_from
+    msg["To"] = to_email
+    msg["Subject"] = subject
+    msg.set_content(body)
+
+    # Gmail SMTP (STARTTLS)
+    with smtplib.SMTP(host, port) as server:
+        server.ehlo()
+        server.starttls()
+        server.login(username, password)
+        server.send_message(msg)
+
+
 # --------------------
 # App
 # --------------------
@@ -377,6 +408,8 @@ def fund(
 
 @app.post("/transfer")
 def transfer(
+    req: TransferRequest,
+    background_tasks: BackgroundTasks,
     body: TransferIn,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -423,6 +456,27 @@ def transfer(
     )
 
     db.commit()
+
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    amount = f"${req.amount_cents/100:.2f}"
+
+    sender_email = user.email
+    receiver_email = receiver.email  # however you looked them up
+
+    background_tasks.add_task(
+        send_email,
+        sender_email,
+        "CashPlus transfer sent",
+        f"You have sent {amount} to {receiver_email} on {now_str}."
+    )
+
+    background_tasks.add_task(
+        send_email,
+        receiver_email,
+        "CashPlus transfer received",
+        f"You have received {amount} from {sender_email} on {now_str}."
+    )
+
 
     return {
         "status": "transferred",
