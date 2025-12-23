@@ -405,38 +405,6 @@ def fund(
 
     return {"status": "funded", "balance_cents": account.balance_cents}
 
-import os, smtplib
-from email.message import EmailMessage
-
-def send_email(to_email: str, subject: str, body: str):
-    try:
-        host = os.environ["SMTP_HOST"]
-        port = int(os.environ.get("SMTP_PORT", "587"))
-        username = os.environ["SMTP_USERNAME"]
-        password = os.environ["SMTP_PASSWORD"]
-        email_from = os.environ["EMAIL_FROM"]
-
-        msg = EmailMessage()
-        msg["From"] = email_from
-        msg["To"] = to_email
-        msg["Subject"] = subject
-        msg.set_content(body)
-
-        print(f"[EMAIL] Sending to={to_email} subject={subject}")
-
-        with smtplib.SMTP(host, port, timeout=20) as server:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            server.login(username, password)
-            server.send_message(msg)
-
-        print(f"[EMAIL] Sent OK to={to_email}")
-
-    except Exception as e:
-        print(f"[EMAIL] FAILED to={to_email} err={repr(e)}")
-        raise
-
 
 class TransferRequest(BaseModel):
     receiver_email: str = Field(..., min_length=3, max_length=320)
