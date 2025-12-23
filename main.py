@@ -408,6 +408,39 @@ def fund(
 
     return {"status": "funded", "balance_cents": account.balance_cents}
 
+import os, smtplib
+from email.message import EmailMessage
+
+def send_email(to_email: str, subject: str, body: str):
+    try:
+        host = os.environ["SMTP_HOST"]
+        port = int(os.environ.get("SMTP_PORT", "587"))
+        username = os.environ["SMTP_USERNAME"]
+        password = os.environ["SMTP_PASSWORD"]
+        email_from = os.environ["EMAIL_FROM"]
+
+        msg = EmailMessage()
+        msg["From"] = email_from
+        msg["To"] = to_email
+        msg["Subject"] = subject
+        msg.set_content(body)
+
+        print(f"[EMAIL] Sending to={to_email} subject={subject}")
+
+        with smtplib.SMTP(host, port, timeout=20) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(username, password)
+            server.send_message(msg)
+
+        print(f"[EMAIL] Sent OK to={to_email}")
+
+    except Exception as e:
+        print(f"[EMAIL] FAILED to={to_email} err={repr(e)}")
+        raise
+
+
 class TransferRequest(BaseModel):
     receiver_email: str = Field(..., min_length=3, max_length=320)
     amount_cents: int = Field(..., gt=0)
@@ -415,6 +448,7 @@ class TransferRequest(BaseModel):
 
 from fastapi import BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
+from datetime import datetime, timezone
 
 @app.post("/transfer")
 def transfer(
@@ -446,7 +480,7 @@ def transfer(
     db.add(Transaction(
         user_id=user.id,
         type="XFER_OUT",
-        amount_cents=body.amount_cents,   # ✅ keep your convention
+        amount_cents=body.amount_cents,
         direction="OUT",
         counterparty="USER",
         counterparty_email=to_email,
@@ -465,26 +499,22 @@ def transfer(
     db.refresh(from_acct)
     db.refresh(to_acct)
 
-    from datetime import datetime
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    amount_str = f"${body.amount_cents / 100:.2f}"
 
-    now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-
-    # email to sender
+    # schedule emails AFTER commit
     background_tasks.add_task(
         send_email,
         user.email,
         "CashPlus transfer sent",
-        f"You have sent ${body.amount_cents / 100:.2f} to {to_user.email} on {now_str}."
+        f"You have sent {amount_str} to {to_user.email} on {now_str}."
     )
-
-    # email to receiver
     background_tasks.add_task(
         send_email,
         to_user.email,
         "CashPlus transfer received",
-        f"You have received ${body.amount_cents / 100:.2f} from {user.email} on {now_str}."
+        f"You have received {amount_str} from {user.email} on {now_str}."
     )
-
 
     return {
         "ok": True,
@@ -495,7 +525,8 @@ def transfer(
     }
 
 
-    return {"ok": True}
+
+    #return {"ok": True}
 
 
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
