@@ -8,7 +8,9 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 bearer_scheme = HTTPBearer()
 from jose import jwt, JWTError
 from passlib.context import CryptContext
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, Field, EmailStr
+#from pydantic import BaseModel, Field
+
 
 from sqlalchemy import create_engine, String, DateTime, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker, Session
@@ -405,6 +407,11 @@ def fund(
     db.commit()
 
     return {"status": "funded", "balance_cents": account.balance_cents}
+
+class TransferRequest(BaseModel):
+    receiver_email: str = Field(..., min_length=3, max_length=320)
+    amount_cents: int = Field(..., gt=0)
+
 
 @app.post("/transfer")
 def transfer(
