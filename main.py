@@ -463,6 +463,18 @@ def transfer(
 
     db.commit()
 
+    db.refresh(from_acct)
+
+    return {
+        "ok": True,
+        "to_email": to_user.email,
+        "to_user_id": to_user.id,
+        "amount_cents": body.amount_cents,
+        "balance_cents": from_acct.balance_cents,
+        "created_at": datetime.utcnow().isoformat() + "Z",
+    }
+
+
     return {"ok": True}
 
 
