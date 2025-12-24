@@ -526,7 +526,7 @@ def transfer(
         amount_cents=body.amount_cents,
         direction="OUT",
         counterparty="USER",
-        counterparty_email=to_email,
+        counterparty_email=recipient.email,
     ))
 
     db.add(Transaction(
@@ -612,7 +612,7 @@ def update_profile(body: ProfileUpdateIn, user: User = Depends(get_current_user)
     return {
         "status": "transferred",
         "from_balance_cents": from_acct.balance_cents,
-        "to_email": to_email,
+        "to_email": recipient.email, #changed to_email to recipient.email
         "amount_cents": body.amount_cents,
     }
 
