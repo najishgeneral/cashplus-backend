@@ -72,6 +72,33 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 class Base(DeclarativeBase):
     pass
 
+
+import re
+from pydantic import BaseModel, Field
+
+CASHTAG_RE = re.compile(r"^[a-zA-Z0-9_]{3,20}$")  # tune rules
+E164_RE = re.compile(r"^\+[1-9]\d{7,14}$")        # basic E.164
+
+class ProfileUpdateIn(BaseModel):
+    phone: str | None = None          # "+12065551234"
+    cashtag: str | None = None        # "naji" or "$naji"
+
+def normalize_cashtag(s: str) -> str:
+    s = (s or "").strip()
+    if s.startswith("$"):
+        s = s[1:]
+    s = s.lower()
+    if not CASHTAG_RE.match(s):
+        raise HTTPException(400, "Invalid cashtag. Use 3-20 letters/numbers/_")
+    return s
+
+def normalize_phone(s: str) -> str:
+    s = (s or "").strip()
+    if not E164_RE.match(s):
+        raise HTTPException(400, "Phone must be E.164 format like +12065551234")
+    return s
+
+
 from pydantic import BaseModel, Field
 import re, uuid
 
@@ -95,7 +122,10 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
+    phone: Mapped[str | None] = mapped_column(String(20), unique=True, index=True, nullable=True)
+    cashtag: Mapped[str | None] = mapped_column(String(32), unique=True, index=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
 
 
 class Account(Base):
@@ -209,8 +239,9 @@ class FundIn(BaseModel):
     amount_cents: int
 
 class TransferIn(BaseModel):
-    to_email: EmailStr
-    amount_cents: int
+    to: str = Field(..., min_length=3, max_length=320)
+    amount_cents: conint(gt=0)
+
 
 # --------------------
 # Helpers / deps
@@ -436,6 +467,24 @@ def debug_send_test_email(background_tasks: BackgroundTasks, user: User = Depend
     background_tasks.add_task(send_email, user.email, "CashPlus test", "This is a test email.")
     return {"ok": True}
 
+def resolve_recipient(db: Session, to: str) -> User | None:
+    to = (to or "").strip()
+
+    # cashtag: "$naji" or "naji" if you want to require '$' you can
+    if to.startswith("$"):
+        handle = normalize_cashtag(to)
+        return db.query(User).filter(User.cashtag == handle).first()
+
+    # phone: starts with +
+    if to.startswith("+"):
+        phone = normalize_phone(to)
+        return db.query(User).filter(User.phone == phone).first()
+
+    # else treat as email
+    email = to.lower()
+    return db.query(User).filter(User.email == email).first()
+
+
 from datetime import datetime, timezone
 
 @app.post("/transfer")
@@ -448,7 +497,13 @@ def transfer(
     if body.amount_cents <= 0:
         raise HTTPException(status_code=400, detail="amount_cents must be > 0")
 
-    to_email = body.to_email.lower().strip()
+    #to_email = body.to_email.lower().strip()
+    recipient = resolve_recipient(db, body.to)
+    if not recipient:
+        raise HTTPException(404, "Recipient not found")
+    if recipient.id == user.id:
+        raise HTTPException(400, "Cannot transfer to yourself")
+
     if to_email == user.email:
         raise HTTPException(status_code=400, detail="Cannot transfer to yourself")
 
@@ -513,10 +568,24 @@ def transfer(
         "receiver_balance_cents": to_acct.balance_cents,
     }
 
-
-
-
     #return {"ok": True}
+
+@app.post("/me/profile")
+def update_profile(body: ProfileUpdateIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if body.phone is not None:
+        user.phone = normalize_phone(body.phone)
+
+    if body.cashtag is not None:
+        user.cashtag = normalize_cashtag(body.cashtag)
+
+    try:
+        db.add(user)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Phone or cashtag already in use")
+
+    return {"ok": True, "phone": user.phone, "cashtag": user.cashtag}
 
 
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
