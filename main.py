@@ -497,25 +497,23 @@ def transfer(
     if body.amount_cents <= 0:
         raise HTTPException(status_code=400, detail="amount_cents must be > 0")
 
-    #to_email = body.to_email.lower().strip()
     recipient = resolve_recipient(db, body.to)
     if not recipient:
-        raise HTTPException(404, "Recipient not found")
-    if recipient.id == user.id:
-        raise HTTPException(400, "Cannot transfer to yourself")
+        raise HTTPException(status_code=404, detail="Recipient not found")
 
-    if to_email == user.email:
+    if recipient.id == user.id:
         raise HTTPException(status_code=400, detail="Cannot transfer to yourself")
 
-    to_user = db.query(User).filter(User.email == to_email).first()
-    if not to_user:
-        raise HTTPException(status_code=404, detail="Recipient not found")
+    to_user = recipient
 
     from_acct = get_or_create_account(db, user.id)
     to_acct = get_or_create_account(db, to_user.id)
 
     if from_acct.balance_cents < body.amount_cents:
         raise HTTPException(status_code=400, detail="Insufficient funds")
+
+    # ... rest unchanged, but use to_user.email / recipient.email ...
+
 
     from_acct.balance_cents -= body.amount_cents
     to_acct.balance_cents += body.amount_cents
