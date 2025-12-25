@@ -525,9 +525,13 @@ def me(user: User = Depends(get_current_user)):
         "id": user.id,
         "email": user.email,
         "phone": user.phone,
+        "full_name": user.full_name,
+        "national_number": user.national_number,
+        "address": user.address,
         "cashtag": user.cashtag,
         "created_at": user.created_at,
     }
+
 
 @app.post("/fund")
 def fund(
