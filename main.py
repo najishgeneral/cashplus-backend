@@ -83,20 +83,56 @@ class ProfileUpdateIn(BaseModel):
     phone: str | None = None          # "+12065551234"
     cashtag: str | None = None        # "naji" or "$naji"
 
-def normalize_cashtag(s: str) -> str:
-    s = (s or "").strip()
-    if s.startswith("$"):
-        s = s[1:]
-    s = s.lower()
-    if not CASHTAG_RE.match(s):
-        raise HTTPException(400, "Invalid cashtag. Use 3-20 letters/numbers/_")
-    return s
+# def normalize_cashtag(s: str) -> str:
+    # s = (s or "").strip()
+    # if s.startswith("$"):
+        # s = s[1:]
+    # s = s.lower()
+    # if not CASHTAG_RE.match(s):
+        # raise HTTPException(400, "Invalid cashtag. Use 3-20 letters/numbers/_")
+    # return s
 
-def normalize_phone(s: str) -> str:
-    s = (s or "").strip()
-    if not E164_RE.match(s):
-        raise HTTPException(400, "Phone must be E.164 format like +12065551234")
-    return s
+# def normalize_phone(s: str) -> str:
+    # s = (s or "").strip()
+    # if not E164_RE.match(s):
+        # raise HTTPException(400, "Phone must be E.164 format like +12065551234")
+    # return s
+
+import re
+from fastapi import HTTPException
+
+def normalize_phone(raw: str) -> str:
+    s = (raw or "").strip()
+
+    # If user already typed +..., normalize to + + digits
+    if s.startswith("+"):
+        digits = re.sub(r"\D+", "", s)
+        normalized = "+" + digits
+    else:
+        digits = re.sub(r"\D+", "", s)
+
+        # US 10-digit (e.g., 2064254481) -> +12064254481
+        if len(digits) == 10:
+            normalized = "+1" + digits
+
+        # US 11-digit starting with 1 (e.g., 12064254481) -> +12064254481
+        elif len(digits) == 11 and digits.startswith("1"):
+            normalized = "+" + digits
+
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Phone must be 10 digits (US), 11 digits starting with 1, or E.164 like +12065551234",
+            )
+
+    # Final sanity check: must look like + and 11 digits for US
+    if not re.fullmatch(r"\+\d{11}", normalized):
+        raise HTTPException(
+            status_code=400,
+            detail="Phone must be a valid US number (10 digits) or E.164 like +12065551234",
+        )
+
+    return normalized
 
 
 from pydantic import BaseModel, Field
