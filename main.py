@@ -119,12 +119,26 @@ class WithdrawRequest(BaseModel):
 
 class User(Base):
     __tablename__ = "users"
+
     id: Mapped[int] = mapped_column(primary_key=True)
+
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
-    phone: Mapped[str | None] = mapped_column(String(20), unique=True, index=True, nullable=True)
-    cashtag: Mapped[str | None] = mapped_column(String(32), unique=True, index=True, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    phone: Mapped[str] = mapped_column(String(20), unique=True, index=True)
+
+    full_name: Mapped[str] = mapped_column(String(120))
+    national_number: Mapped[str] = mapped_column(String(40))
+    address: Mapped[str] = mapped_column(String(300))
+
+    cashtag: Mapped[str | None] = mapped_column(
+        String(32), unique=True, index=True, nullable=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
 
 
 
