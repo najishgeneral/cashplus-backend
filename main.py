@@ -395,6 +395,8 @@ def health():
     return {"ok": True}
 
 
+#from sqlalchemy.exc import IntegrityError
+
 @app.post("/auth/register")
 def register(body: RegisterIn, db: Session = Depends(get_db)):
     email = body.email.lower().strip()
@@ -402,20 +404,64 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
     if len(body.password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
 
-    user = User(email=email, password_hash=pwd_context.hash(body.password))
+    # normalize + basic validation
+    phone_norm = normalize_phone(body.phone)
+    if not phone_norm or not phone_norm.startswith("+"):
+        raise HTTPException(status_code=400, detail="Phone must be in E.164 format like +12065551234")
+
+    user = User(
+        email=email,
+        password_hash=pwd_context.hash(body.password),
+        full_name=body.full_name.strip(),
+        phone=phone_norm,
+        national_number=body.national_number.strip(),
+        address=body.address.strip(),
+        # cashtag stays optional / not required at register
+    )
+
     db.add(user)
+
     try:
         db.commit()
-        db.refresh(user)  # <-- IMPORTANT so user.id is available
-    except IntegrityError:
+        db.refresh(user)  # user.id available now
+    except IntegrityError as e:
         db.rollback()
-        raise HTTPException(status_code=409, detail="Email already registered")
 
+        # Detect which unique constraint failed (Postgres)
+        constraint = None
+        orig = getattr(e, "orig", None)
+        diag = getattr(orig, "diag", None)
+        if diag is not None:
+            constraint = getattr(diag, "constraint_name", None)
+
+        msg = "Already registered"
+        if constraint:
+            c = constraint.lower()
+            if "email" in c:
+                msg = "Email already registered"
+            elif "phone" in c:
+                msg = "Phone number already registered"
+            elif "cashtag" in c:
+                msg = "Cashtag already in use"
+        else:
+            # fallback: parse error text if constraint name isn't available
+            s = str(orig).lower() if orig else str(e).lower()
+            if "email" in s:
+                msg = "Email already registered"
+            elif "phone" in s:
+                msg = "Phone number already registered"
+            elif "cashtag" in s:
+                msg = "Cashtag already in use"
+
+        raise HTTPException(status_code=409, detail=msg)
+
+    # Create ledger account
     account = Account(user_id=user.id, balance_cents=0)
     db.add(account)
     db.commit()
 
     return {"status": "registered"}
+
 
 @app.get("/fbo_total")
 def fbo_total(db: Session = Depends(get_db)):
