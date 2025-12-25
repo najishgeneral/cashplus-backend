@@ -238,6 +238,10 @@ Base.metadata.create_all(bind=engine)
 class RegisterIn(BaseModel):
     email: EmailStr
     password: str
+    full_name: str
+    phone: str
+    national_number: str
+    address: str
 
 
 class LoginIn(BaseModel):
