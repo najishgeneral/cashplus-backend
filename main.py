@@ -134,7 +134,7 @@ def normalize_phone(raw: str) -> str:
 
     return normalized
 
-3import re
+#import re
 #from fastapi import HTTPException
 
 def normalize_national_number(raw: str) -> str:
