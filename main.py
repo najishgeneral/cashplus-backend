@@ -134,6 +134,15 @@ def normalize_phone(raw: str) -> str:
 
     return normalized
 
+3import re
+#from fastapi import HTTPException
+
+def normalize_national_number(raw: str) -> str:
+    digits = re.sub(r"\D+", "", (raw or ""))
+    if len(digits) != 8:
+        raise HTTPException(status_code=400, detail="National number must be exactly 8 digits")
+    return digits
+
 
 from pydantic import BaseModel, Field
 import re, uuid
@@ -271,14 +280,15 @@ Base.metadata.create_all(bind=engine)
 # --------------------
 # Schemas
 # --------------------
+from pydantic import BaseModel, Field, EmailStr
+
 class RegisterIn(BaseModel):
     email: EmailStr
-    password: str
-    full_name: str
-    phone: str
-    national_number: str
-    address: str
-
+    password: str = Field(..., min_length=8)
+    full_name: str = Field(..., min_length=7, max_length=45)
+    phone: str = Field(..., min_length=9, max_length=11)  # raw input; validated after normalize
+    national_number: str = Field(..., min_length=8, max_length=8)  # exact length
+    address: str = Field(..., min_length=12, max_length=50)
 
 class LoginIn(BaseModel):
     email: EmailStr
@@ -449,15 +459,28 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
     if not phone_norm or not phone_norm.startswith("+"):
         raise HTTPException(status_code=400, detail="Phone must be in E.164 format like +12065551234")
 
+    full_name = body.full_name.strip()
+    address = body.address.strip()
+
+    if not (7 <= len(full_name) <= 45):
+        raise HTTPException(400, "Full name must be 7–45 characters")
+
+    if not (12 <= len(address) <= 50):
+        raise HTTPException(400, "Address must be 12–50 characters")
+
+    phone_norm = normalize_phone(body.phone)
+    nn_norm = normalize_national_number(body.national_number)
+
     user = User(
         email=email,
         password_hash=pwd_context.hash(body.password),
-        full_name=body.full_name.strip(),
+        full_name=full_name,
         phone=phone_norm,
-        national_number=body.national_number.strip(),
-        address=body.address.strip(),
+        national_number=nn_norm,
+        address=address,
         # cashtag stays optional / not required at register
     )
+
 
     db.add(user)
 
